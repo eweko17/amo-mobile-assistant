@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>阿墨 AI 助理</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.webmanifest">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>阿墨 AI 助理</h1>
+            <button id="settings-btn">設定</button>
+        </header>
+        <main id="chat-container">
+            <div id="messages"></div>
+        </main>
+        <!-- 設定視窗 -->
+        <div id="settings-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2>設定</h2>
+                <input type="password" id="groq-key" placeholder="Groq API Key">
+                <input type="password" id="gemini-key" placeholder="Gemini API Key">
+                <input type="password" id="tavily-key" placeholder="Tavily API Key">
+                <input type="text" id="gist-id" placeholder="Gist ID">
+                <input type="password" id="github-token" placeholder="GitHub Token">
+                <button id="save-settings">儲存</button>
+                <button id="close-settings">關閉</button>
+            </div>
+        </div>
+        <footer>
+            <input type="text" id="user-input" placeholder="輸入訊息...">
+            <button id="send-btn">發送</button>
+        </footer>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
