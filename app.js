@@ -64,6 +64,11 @@ const PERSONA = `# 人格設定
 let memory = { memory: {}, conversations: [], corrections: [] };
 
 document.addEventListener('DOMContentLoaded', () => {
+    // 打開時把存好的設定讀回來填好
+    ['groq-key', 'gemini-key', 'tavily-key', 'gist-id', 'github-token'].forEach(id => {
+        const val = localStorage.getItem(id);
+        if (val) document.getElementById(id).value = val;
+    });
     initMemory();
 
     const settingsBtn = document.getElementById('settings-btn');
