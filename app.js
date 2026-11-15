@@ -104,18 +104,46 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelEditBtn = document.getElementById('cancel-edit');
 
     photoBtn.addEventListener('click', () => photoInput.click());
-    photoInput.addEventListener('change', () => {
+    photoInput.addEventListener('change', async () => {
         const file = photoInput.files[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = () => {
-            pendingPhoto = { dataUrl: reader.result, name: file.name };
-            photoPreviewImg.src = reader.result;
-            photoPreviewName.textContent = file.name;
-            photoPreview.classList.remove('hidden');
-            userInput.focus();
-        };
-        reader.readAsDataURL(file);
+        let blob = file;
+        const isHeic = /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
+        if (isHeic) {
+            try {
+                if (typeof heic2any === 'undefined') throw new Error('no converter');
+                blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+                if (Array.isArray(blob)) blob = blob[0];
+            } catch (e) {
+                alert('這張是 HEIC 格式，手機瀏覽器轉不過去。請改傳 JPG 或 PNG 的照片，或是到相機設定改成「最相容」再拍一張。');
+                photoInput.value = '';
+                return;
+            }
+        }
+        // 統一縮到最長邊 1024 並轉成 JPEG，避免照片太大傳不出去
+        const dataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const img = new Image();
+                img.onload = () => {
+                    const maxSide = 1024;
+                    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.round(img.width * scale);
+                    canvas.height = Math.round(img.height * scale);
+                    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                    resolve(canvas.toDataURL('image/jpeg', 0.85));
+                };
+                img.onerror = () => resolve(reader.result);
+                img.src = reader.result;
+            };
+            reader.readAsDataURL(blob);
+        });
+        pendingPhoto = { dataUrl, name: file.name.replace(/\.hei[cf]$/i, '.jpg') };
+        photoPreviewImg.src = dataUrl;
+        photoPreviewName.textContent = pendingPhoto.name;
+        photoPreview.classList.remove('hidden');
+        userInput.focus();
     });
     photoRemove.addEventListener('click', () => {
         pendingPhoto = null;
@@ -187,14 +215,14 @@ document.addEventListener('DOMContentLoaded', () => {
         photoInput.value = '';
         photoPreview.classList.add('hidden');
         userInput.value = '';
-        const thinkingDiv = addMessage('assistant', '思考中...');
+        const thinkingDiv = addMessage('assistant', '');
         const span = document.createElement('span');
         thinkingDiv.appendChild(span);
-        span.textContent = '...';
+        span.textContent = '思考中...';
 
         try {
             let context = '';
-            if (/找|最新|推薦|菜單|評價|哪裡|多少錢|營業時間|現在/.test(text)) {
+            if (/找|最新|推薦|菜單|評價|哪裡|多少錢|營業時間|現在|天氣|明天|今天|氣溫|降雨|颱風/.test(text)) {
                 span.textContent = '搜尋最新資訊中...';
                 try {
                     const res = await fetch('https://api.tavily.com/search', {
