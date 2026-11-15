@@ -62,6 +62,8 @@ const PERSONA = `# 人格設定
 - 不確定時：先給最可能的答案，再列出其他可能。`;
 
 let memory = { memory: {}, conversations: [], corrections: [] };
+let pendingPhoto = null;
+let editTarget = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     // 打開時把存好的設定讀回來填好
@@ -88,6 +90,53 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     sendBtn.addEventListener('click', sendMessage);
+    userInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+
+    const photoBtn = document.getElementById('photo-btn');
+    const photoInput = document.getElementById('photo-input');
+    const photoPreview = document.getElementById('photo-preview');
+    const photoPreviewImg = document.getElementById('photo-preview-img');
+    const photoPreviewName = document.getElementById('photo-preview-name');
+    const photoRemove = document.getElementById('photo-remove');
+    const editModal = document.getElementById('edit-modal');
+    const editTextarea = document.getElementById('edit-textarea');
+    const saveEditBtn = document.getElementById('save-edit');
+    const cancelEditBtn = document.getElementById('cancel-edit');
+
+    photoBtn.addEventListener('click', () => photoInput.click());
+    photoInput.addEventListener('change', () => {
+        const file = photoInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            pendingPhoto = { dataUrl: reader.result, name: file.name };
+            photoPreviewImg.src = reader.result;
+            photoPreviewName.textContent = file.name;
+            photoPreview.classList.remove('hidden');
+            userInput.focus();
+        };
+        reader.readAsDataURL(file);
+    });
+    photoRemove.addEventListener('click', () => {
+        pendingPhoto = null;
+        photoInput.value = '';
+        photoPreview.classList.add('hidden');
+    });
+    cancelEditBtn.addEventListener('click', () => {
+        editTarget = null;
+        editModal.classList.add('hidden');
+    });
+    saveEditBtn.addEventListener('click', () => {
+        if (!editTarget) return;
+        const newAns = editTextarea.value.trim();
+        if (newAns && newAns !== editTarget.span.textContent) {
+            memory.corrections.push({ user: editTarget.text, old: editTarget.span.textContent, new: newAns, time: new Date().toISOString() });
+            editTarget.span.textContent = newAns;
+            syncToGist();
+        }
+        editTarget = null;
+        editModal.classList.add('hidden');
+    });
 
     async function initMemory() {
         const gistId = localStorage.getItem('gist-id');
@@ -125,17 +174,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function sendMessage() {
         const text = userInput.value.trim();
-        if (!text) return;
-        addMessage('user', text);
+        if (!text && !pendingPhoto) return;
+        const userDiv = addMessage('user', text);
+        if (pendingPhoto) {
+            const img = document.createElement('img');
+            img.src = pendingPhoto.dataUrl;
+            img.alt = pendingPhoto.name;
+            userDiv.prepend(img);
+        }
+        const photoToSend = pendingPhoto;
+        pendingPhoto = null;
+        photoInput.value = '';
+        photoPreview.classList.add('hidden');
         userInput.value = '';
-        const thinkingDiv = addMessage('assistant', '');
+        const thinkingDiv = addMessage('assistant', '思考中...');
         const span = document.createElement('span');
         thinkingDiv.appendChild(span);
-        span.textContent = '思考中...';
+        span.textContent = '...';
 
         try {
             let context = '';
-            if (/找|最新|推薦|菜單|評價|哪裡|多少錢|營業時間|現在|天氣|明天|今天|氣溫|降雨|颱風/.test(text)) {
+            if (/找|最新|推薦|菜單|評價|哪裡|多少錢|營業時間|現在/.test(text)) {
                 span.textContent = '搜尋最新資訊中...';
                 try {
                     const res = await fetch('https://api.tavily.com/search', {
@@ -149,22 +208,25 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             span.textContent = '詢問模型中...';
-            let response = await chatGroq(context + text);
+            let response = null;
+            if (photoToSend) {
+                response = await chatWithPhoto(text, photoToSend.dataUrl);
+            }
+            if (!response) response = await chatGroq(context + text);
             if (!response) response = await chatGemini(context + text);
             span.textContent = response;
 
-            memory.conversations.push({ user: text, assistant: response, time: new Date().toISOString() });
+            memory.conversations.push({ user: text, assistant: response, time: new Date().toISOString(), hasPhoto: !!photoToSend });
             await syncToGist();
 
             const editBtn = document.createElement('button');
-            editBtn.textContent = '✏️';
+            editBtn.textContent = '✏️ 修正';
+            editBtn.className = 'edit-btn';
             editBtn.onclick = () => {
-                const newAns = prompt('請修正答案：', span.textContent);
-                if (newAns) {
-                    memory.corrections.push({ user: text, old: span.textContent, new: newAns, time: new Date().toISOString() });
-                    span.textContent = newAns;
-                    syncToGist();
-                }
+                editTarget = { span, text };
+                editTextarea.value = span.textContent;
+                editModal.classList.remove('hidden');
+                editTextarea.focus();
             };
             thinkingDiv.appendChild(editBtn);
 
@@ -179,6 +241,27 @@ document.addEventListener('DOMContentLoaded', () => {
         if (typeof text === 'string') div.textContent = text;
         document.getElementById('messages').appendChild(div);
         return div;
+    }
+
+    async function chatWithPhoto(prompt, dataUrl) {
+        try {
+            const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('groq-key')}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+                    messages: [{ role: 'system', content: PERSONA }, { role: 'user', content: [
+                        { type: 'text', text: prompt || '請看這張照片，告訴我裡面是什麼' },
+                        { type: 'image_url', image_url: { url: dataUrl } }
+                    ]}]
+                })
+            });
+            if (!res.ok) throw new Error();
+            return (await res.json()).choices[0].message.content;
+        } catch { return null; }
     }
 
     async function chatGroq(prompt) {
