@@ -29,7 +29,25 @@
                 <button id="close-settings">關閉</button>
             </div>
         </div>
+        <!-- 修正答案視窗 -->
+        <div id="edit-modal" class="modal hidden">
+            <div class="modal-content edit-modal-content">
+                <h2>修正答案</h2>
+                <textarea id="edit-textarea" rows="10" placeholder="在這裡修改答案，可以直接點到要改的那一句改..."></textarea>
+                <div class="modal-actions">
+                    <button id="cancel-edit" class="secondary-btn">取消</button>
+                    <button id="save-edit">儲存修正</button>
+                </div>
+            </div>
+        </div>
+        <div id="photo-preview" class="hidden">
+            <img id="photo-preview-img" alt="已選照片">
+            <span id="photo-preview-name"></span>
+            <button id="photo-remove" type="button">✕</button>
+        </div>
         <footer>
+            <button id="photo-btn" type="button" title="傳照片">📷</button>
+            <input type="file" id="photo-input" accept="image/*" hidden>
             <input type="text" id="user-input" placeholder="輸入訊息...">
             <button id="send-btn">發送</button>
         </footer>
