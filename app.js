@@ -128,14 +128,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!text) return;
         addMessage('user', text);
         userInput.value = '';
-        const thinkingDiv = addMessage('assistant', '思考中...');
+        const thinkingDiv = addMessage('assistant', '');
         const span = document.createElement('span');
         thinkingDiv.appendChild(span);
-        span.textContent = '...';
+        span.textContent = '思考中...';
 
         try {
             let context = '';
-            if (/找|最新|推薦|菜單|評價|哪裡|多少錢|營業時間|現在/.test(text)) {
+            if (/找|最新|推薦|菜單|評價|哪裡|多少錢|營業時間|現在|天氣|明天|今天|氣溫|降雨|颱風/.test(text)) {
                 span.textContent = '搜尋最新資訊中...';
                 try {
                     const res = await fetch('https://api.tavily.com/search', {
