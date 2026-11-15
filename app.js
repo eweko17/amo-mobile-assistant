@@ -71,8 +71,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const val = localStorage.getItem(id);
         if (val) document.getElementById(id).value = val;
     });
-    initMemory();
-
     const settingsBtn = document.getElementById('settings-btn');
     const settingsModal = document.getElementById('settings-modal');
     const closeSettings = document.getElementById('close-settings');
@@ -317,4 +315,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await res.json();
         return data.candidates[0].content.parts[0].text;
     }
+
+    function renderHistory() {
+        const list = (memory.conversations || []).slice(-30);
+        const container = document.getElementById('messages');
+        container.innerHTML = '';
+        list.forEach(entry => {
+            addMessage('user', entry.user || '');
+            const div = addMessage('assistant', '');
+            const span = document.createElement('span');
+            span.textContent = entry.assistant || '';
+            div.appendChild(span);
+            const editBtn = document.createElement('button');
+            editBtn.textContent = '✏️ 修正';
+            editBtn.className = 'edit-btn';
+            editBtn.onclick = () => {
+                editTarget = { span, text: entry.user };
+                editTextarea.value = span.textContent;
+                editModal.classList.remove('hidden');
+                editTextarea.focus();
+            };
+            div.appendChild(editBtn);
+        });
+    }
+
+    initMemory().then(renderHistory);
 });
