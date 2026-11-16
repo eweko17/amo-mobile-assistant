@@ -105,24 +105,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const cancelEditBtn = document.getElementById('cancel-edit');
 
     photoBtn.addEventListener('click', () => photoInput.click());
-    photoInput.addEventListener('change', async () => {
-        const file = photoInput.files[0];
-        if (!file) return;
-        let blob = file;
-        const isHeic = /heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name);
-        if (isHeic) {
-            try {
-                if (typeof heic2any === 'undefined') throw new Error('no converter');
-                blob = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
-                if (Array.isArray(blob)) blob = blob[0];
-            } catch (e) {
-                alert('這張是 HEIC 格式，手機瀏覽器轉不過去。請改傳 JPG 或 PNG 的照片，或是到相機設定改成「最相容」再拍一張。');
-                photoInput.value = '';
-                return;
-            }
-        }
-        // 統一縮到最長邊 1024 並轉成 JPEG，避免照片太大傳不出去
-        const dataUrl = await new Promise((resolve) => {
+    // 用檔案開頭的特徵碼認 HEIC，不只看檔名和類型（手機相簿給的檔名常常沒有副檔名）
+    async function isHeicFile(file) {
+        if (/heic|heif/i.test(file.type) || /\.hei[cf]$/i.test(file.name)) return true;
+        try {
+            const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+            const ftyp = String.fromCharCode(...head.slice(4, 8));
+            const brand = String.fromCharCode(...head.slice(8, 12));
+            return ftyp === 'ftyp' && ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(brand);
+        } catch (e) { return false; }
+    }
+    async function convertHeic(file) {
+        if (typeof heic2any === 'undefined') throw new Error('no converter');
+        let out = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.85 });
+        if (Array.isArray(out)) out = out[0];
+        return out;
+    }
+    // 把圖片縮到最長邊 1024 並轉成 JPEG；瀏覽器解不開就回傳 null，不直接拿原檔去傳
+    function toJpegDataUrl(blob) {
+        return new Promise((resolve) => {
             const reader = new FileReader();
             reader.onload = () => {
                 const img = new Image();
@@ -135,11 +136,39 @@ document.addEventListener('DOMContentLoaded', () => {
                     canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
                     resolve(canvas.toDataURL('image/jpeg', 0.85));
                 };
-                img.onerror = () => resolve(reader.result);
+                img.onerror = () => resolve(null);
                 img.src = reader.result;
             };
+            reader.onerror = () => resolve(null);
             reader.readAsDataURL(blob);
         });
+    }
+    photoInput.addEventListener('change', async () => {
+        const file = photoInput.files[0];
+        if (!file) return;
+        let blob = file;
+        if (await isHeicFile(file)) {
+            try {
+                blob = await convertHeic(file);
+            } catch (e) {
+                alert('這張是 HEIC 格式，手機瀏覽器轉不過去。請改傳 JPG 或 PNG 的照片，或是到相機設定改成「最相容」再拍一張。');
+                photoInput.value = '';
+                return;
+            }
+        }
+        // 統一縮到最長邊 1024 並轉成 JPEG，避免照片太大傳不出去
+        let dataUrl = await toJpegDataUrl(blob);
+        if (!dataUrl) {
+            // 瀏覽器解不開，可能是 HEIC 沒被認出來，再試一次轉檔
+            try {
+                dataUrl = await toJpegDataUrl(await convertHeic(file));
+            } catch (e) { dataUrl = null; }
+        }
+        if (!dataUrl) {
+            alert('這張照片手機讀不開，請改傳 JPG 或 PNG 的照片，或是到相機設定改成「最相容」再拍一張。');
+            photoInput.value = '';
+            return;
+        }
         pendingPhoto = { dataUrl, name: file.name.replace(/\.hei[cf]$/i, '.jpg') };
         photoPreviewImg.src = dataUrl;
         photoPreviewName.textContent = pendingPhoto.name;
@@ -240,6 +269,10 @@ document.addEventListener('DOMContentLoaded', () => {
             let response = null;
             if (photoToSend) {
                 response = await chatWithPhoto(text, photoToSend.dataUrl);
+                if (!response) {
+                    // 有附照片時不要默默改回純文字回答，不然看起來像照片不見了
+                    response = '這張照片我讀不到，可能是格式或看圖模型暫時有問題。請換一張 JPG 或 PNG 再傳一次看看。';
+                }
             }
             if (!response) response = await chatGroq(context + text);
             if (!response) response = await chatGemini(context + text);
