@@ -269,6 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
             let response = null;
             if (photoToSend) {
                 response = await chatWithPhoto(text, photoToSend.dataUrl);
+                if (!response) response = await chatGeminiPhoto(text, photoToSend.dataUrl);
                 if (!response) {
                     // 有附照片時不要默默改回純文字回答，不然看起來像照片不見了
                     response = '這張照片我讀不到，可能是格式或看圖模型暫時有問題。請換一張 JPG 或 PNG 再傳一次看看。';
@@ -314,7 +315,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+                    // Groq 的看圖模型：Scout 已在 2026-07-17 下架，現在是 qwen3.8-27b
+                    model: 'qwen/qwen3.8-27b',
                     messages: [{ role: 'system', content: PERSONA }, { role: 'user', content: [
                         { type: 'text', text: prompt || '請看這張照片，告訴我裡面是什麼' },
                         { type: 'image_url', image_url: { url: dataUrl } }
@@ -323,6 +325,26 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             if (!res.ok) throw new Error();
             return (await res.json()).choices[0].message.content;
+        } catch { return null; }
+    }
+
+    // Groq 看圖失敗時的備援：用 Gemini 看圖（手機已存 Gemini key，不用另外申請）
+    async function chatGeminiPhoto(prompt, dataUrl) {
+        try {
+            const key = localStorage.getItem('gemini-key');
+            if (!key) return null;
+            const base64 = dataUrl.split(',')[1];
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ role: 'user', parts: [
+                    { text: `${PERSONA}\n\n${prompt || '請看這張照片，告訴我裡面是什麼'}` },
+                    { inline_data: { mime_type: 'image/jpeg', data: base64 } }
+                ] }] })
+            });
+            if (!res.ok) return null;
+            const data = await res.json();
+            return data.candidates[0].content.parts[0].text;
         } catch { return null; }
     }
 
