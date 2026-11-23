@@ -268,15 +268,16 @@ document.addEventListener('DOMContentLoaded', () => {
             span.textContent = '詢問模型中...';
             let response = null;
             if (photoToSend) {
-                response = await chatWithPhoto(text, photoToSend.dataUrl);
-                if (!response) response = await chatGeminiPhoto(text, photoToSend.dataUrl);
+                response = await chatGeminiPhoto(text, photoToSend.dataUrl);
+                if (!response) response = await chatWithPhoto(text, photoToSend.dataUrl);
                 if (!response) {
                     // 有附照片時不要默默改回純文字回答，不然看起來像照片不見了
                     response = '這張照片我讀不到，可能是格式或看圖模型暫時有問題。請換一張 JPG 或 PNG 再傳一次看看。';
                 }
             }
-            if (!response) response = await chatGroq(context + text);
+            // 主力改為 Gemini（比較聽人設），Groq 當備援
             if (!response) response = await chatGemini(context + text);
+            if (!response) response = await chatGroq(context + text);
             span.textContent = response;
 
             memory.conversations.push({ user: text, assistant: response, time: new Date().toISOString(), hasPhoto: !!photoToSend });
@@ -328,7 +329,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch { return null; }
     }
 
-    // Groq 看圖失敗時的備援：用 Gemini 看圖（手機已存 Gemini key，不用另外申請）
+    // 看圖主力改為 Gemini（手機已存 Gemini key，不用另外申請）；失敗時改用 Groq 看圖
     async function chatGeminiPhoto(prompt, dataUrl) {
         try {
             const key = localStorage.getItem('gemini-key');
@@ -364,14 +365,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function chatGemini(prompt) {
-        const key = localStorage.getItem('gemini-key');
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: `${PERSONA}\n\n${prompt}` }] }] })
-        });
-        const data = await res.json();
-        return data.candidates[0].content.parts[0].text;
+        try {
+            const key = localStorage.getItem('gemini-key');
+            if (!key) return null;
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${key}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: `${PERSONA}\n\n${prompt}` }] }] })
+            });
+            if (!res.ok) return null;
+            const data = await res.json();
+            return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+        } catch { return null; }
     }
 
     function renderHistory() {
